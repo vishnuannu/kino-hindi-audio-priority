@@ -484,17 +484,54 @@ export async function resolve(ref) {
   const cut = ref.indexOf("|");
   const id = cut === -1 ? ref : ref.slice(0, cut);
   const wanted = cut === -1 ? null : ref.slice(cut + 1);
+
   const meta = await metadata(id);
   const originals = videoOriginals(meta.files);
-  const original = wanted ? originals.find((f) => f.name === wanted) : originals[0];
-  if (!original) throw new Error("este item no tiene video");
+  const original = wanted
+    ? originals.find((f) => f.name === wanted)
+    : originals[0];
+
+  if (!original) throw new Error("This item has no video");
+
   const file = bestPlayable(meta.files, original);
-  if (!file) throw new Error("no hay una versión que se pueda reproducir (mp4 o webm)");
+  if (!file) throw new Error("No playable video found");
+
+  const videoBase = stem(original.name).toLowerCase();
+
+  const audioTracks = meta.files
+    .filter((f) => {
+      const name = String(f.name || "");
+
+      if (!/\.(mp3|m4a|aac|ogg|opus|wav)$/i.test(name)) {
+        return false;
+      }
+
+      if (!/[._ -](hindi|hin|hi)\.(mp3|m4a|aac|ogg|opus|wav)$/i.test(name)) {
+        return false;
+      }
+
+      const audioBase = stem(name)
+        .replace(/[._ -](hindi|hin|hi)$/i, "")
+        .toLowerCase();
+
+      return audioBase === videoBase;
+    })
+    .slice(0, 8)
+    .map((f) => ({
+      lang: "hi",
+      label: "Hindi",
+      url: downloadUrl(id, f.name)
+    }));
+
   const seconds = Number(file.length || original.length || 0);
+
   return {
     url: downloadUrl(id, file.name),
-    mime: /\.webm$/i.test(file.name) ? "video/webm" : "video/mp4",
+    mime: /\.webm$/i.test(file.name)
+      ? "video/webm"
+      : "video/mp4",
     subtitles: subtitlesFor(id, meta.files, original),
-    durationMs: seconds > 0 ? Math.round(seconds * 1000) : undefined,
+    ...(audioTracks.length ? { audioTracks } : {}),
+    durationMs: seconds > 0 ? Math.round(seconds * 1000) : undefined
   };
 }
